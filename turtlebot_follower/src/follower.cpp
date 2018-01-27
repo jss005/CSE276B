@@ -81,11 +81,10 @@ private:
   double x_scale_; /**< The scaling factor for rotational robot speed */
   bool   enabled_; /**< Enable/disable following; just prevents motor commands */
 
-  bool hug_mode = false;
-  bool spooked = false;
-  double saved_max_z = 2.0;
-  double saved_goal_z = 1.5;
-  double hug_mode_goal_z = 0.5;
+  bool hug_mode = false; //indicates if bot is ready to receive hugs
+  bool spooked = false; //indicates if the user got too close
+  double saved_goal_z = 1.5; //saved default goal to reset to
+  double hug_mode_goal_z = 0.5; //goal to go to in hug mode
 
   // Service for start/stop following
   ros::ServiceServer switch_srv_;
@@ -175,7 +174,7 @@ private:
     float x_mid = (min_x_ + max_x_)/2;
 
     //sum of the distances from each point within the bounding box to the mid x point
-    float sum_x_diff_from_mid = 0;
+    float sum_x_diff_from_mid = 0.0;
 
     //average over all points in the bounding box of the distance to the mid x point
     float avg_x_diff_from_mid = 0.0;
@@ -183,6 +182,7 @@ private:
     //threshold that registers as arms outspread
     float x_thresh_dist = 0.1;
 
+    //threshold from the hug goal that spooks the robot
     float spook_range = 0.05;
 
     //Iterate through all the points in the region and find the average of the position
