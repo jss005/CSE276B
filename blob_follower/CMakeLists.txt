@@ -11,6 +11,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   std_msgs
+  nodelet
+  depth_image_proc
 )
 
 ## System dependencies are found with CMake's conventions
