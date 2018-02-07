@@ -28,6 +28,7 @@ Description: This program subscribes to the /blobs and /camera/depth/points topi
 // STATE VARIABLES
 bool done_mode;
 bool spin_mode;
+bool wander_mode;
 bool avoid_mode;
 bool obstacle_detected;
 
@@ -35,6 +36,7 @@ bool obstacle_detected;
 
 int avoid_direction; //which way to turn to avoid an obstacle. + for left, - for right
 int spin_direction; //direction to spin when searching. Default 1, but set to be opposite of avoid_direction
+int spin_mode_enter_time;
 
 int done_criteria = 80000; //Area of color that must be present to decide we are at the goal
 double center = 320.0; //Center of the screen
@@ -44,6 +46,12 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 ros::Publisher cmdpub_; //publisher for movement commands
 
+void enterSpinMode(){
+  if (!spin_mode){
+    spin_mode_enter_time = ros::Time::now().toSec();
+  }
+  spin_mode = true;
+}
 
 
 /*
@@ -51,7 +59,7 @@ Function to initialize states and other variables
 */
 void blobFollowerInit() {
   done_mode = false;
-  spin_mode = true;
+  enterSpinMode();
   avoid_mode = false;
   obstacle_detected = false;
 
@@ -70,12 +78,12 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
     goal_x = 0.0;
     int color_blob_count = 0;
     int color_area = 0;
-    //int color_area_thresh = 2000;
-    int color_area_thresh = 0;
+    int color_area_thresh = 2000; //can be used in noisy environments where there may be small patches of color
+    //int color_area_thresh = 0; //for clean environments
 
     //find all the blobs that are COLOR and sum their x positions
     for (int i = 0; i < blobsIn.blob_count; i++){
-      if (blobsIn.blobs[i].red == 255 && blobsIn.blobs[i].green == 0 && blobsIn.blobs[i].blue == 0){
+      if (blobsIn.blobs[i].red == 0 && blobsIn.blobs[i].green == 255 && blobsIn.blobs[i].blue == 0){
         goal_x += blobsIn.blobs[i].x;
         color_blob_count++;
         color_area += blobsIn.blobs[i].area;
@@ -94,7 +102,7 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
     }
     else{ //if no COLOR blobs were found, go back to spin mode
       goal_x = 0.0;
-      spin_mode = true;
+      enterSpinMode();
     }
 }
 
@@ -110,9 +118,8 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
   float z_thresh = 0.5;
 
-  //x and y of the centroid
+  //x position of the centroid
   float x = 0.0;
-  float y = 0.0;
   
   //find potential obstacles
   for (int k = 0; k < IMAGE_HEIGHT; k++){
@@ -124,7 +131,6 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
         continue;
 
       x += pt.x;
-      y += pt.y;
 
       numValid++;
     }
@@ -132,11 +138,10 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
 
   //average out x and y points within range
   x /= numValid;
-  y /= numValid;
 
   //obstacle detected!
   if (numValid > 4000){
-    ROS_INFO_THROTTLE(1, "Centroid detected at x: %f, y: %f with %d points", x, y, numValid);
+    //ROS_INFO_THROTTLE(1, "Centroid detected at x: %f, with %d points", x, numValid);
 
     obstacle_detected = true;
 
@@ -160,13 +165,6 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
 
 int main (int argc, char** argv) {
   ros::init(argc, argv, "blobs_test");
-  bool goal_trigger = 0;
-  int i =0; //counter
-  bool goLeft = 0;
-  bool goRight = 0;
-
-  //initiate the robot state
-  blobFollowerInit();
 
   // Create handle that will be used for both subscribing and publishing. 
   ros::NodeHandle n;
@@ -181,6 +179,9 @@ int main (int argc, char** argv) {
   ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
 
   ROS_INFO("Program started!");
+
+  //initiate the robot state
+  blobFollowerInit();
   
   // Set the loop frequency in Hz.
   ros::Rate loop_rate(10);
@@ -195,32 +196,47 @@ int main (int argc, char** argv) {
     }
     //there is an obstacle, avoid it
     else if (avoid_mode){
-      int t0 = ros::Time::now().toSec();
+      //if in avoid mode and we see the obstacle, spin 90 degrees away from it
       if (obstacle_detected){
-        while (ros::Time::now().toSec() - t0 < 3){
-          geometry_msgs::Twist avoid_cmd;
-          avoid_cmd.angular.z = avoid_direction * SPIN_SPEED;
-          cmdpub_.publish(avoid_cmd);
-          ros::spinOnce();
-          loop_rate.sleep();
-        }
+        cmd.angular.z = avoid_direction * 2; //spin 90 degrees
       }
+      //if in avoid mode and we don't see the obstacle, move forward for 2 seconds or until
+      //a new obstacle is detected
       else{
-        while (ros::Time::now().toSec() - t0 < 2){
+        int t0 = ros::Time::now().toSec();
+        while (!obstacle_detected && ros::Time::now().toSec() - t0 < 2){
           geometry_msgs::Twist avoid_cmd;
           avoid_cmd.linear.x = 0.2;
           cmdpub_.publish(avoid_cmd);
           ros::spinOnce();
           loop_rate.sleep();
           avoid_mode = false;
-          spin_mode = true;
+          enterSpinMode();
         }
       }
     }
     //don't know where target is, spin
     else if (spin_mode){
-      ROS_INFO("Spinning");
-      cmd.angular.z = spin_direction * SPIN_SPEED;
+      int t0 = ros::Time::now().toSec();
+      if (t0 - spin_mode_enter_time < 10){
+        ROS_INFO("Spinning");
+        cmd.angular.z = spin_direction * SPIN_SPEED;
+      }
+      //wander forwards for 3 seconds if we've been spinning for too long
+      else{
+        ROS_INFO("Wandering!");
+        spin_mode = false;
+        wander_mode = true;
+        while (!obstacle_detected && ros::Time::now().toSec() - t0 < 3){
+          geometry_msgs::Twist wander_cmd;
+          wander_cmd.linear.x = 0.2;
+          cmdpub_.publish(wander_cmd);
+          ros::spinOnce();
+          loop_rate.sleep();
+        }
+        wander_mode = false;
+        enterSpinMode();
+      }
     }
     //have the goal in sight, move to it
     else {
