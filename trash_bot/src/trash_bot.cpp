@@ -19,6 +19,8 @@ Description:
 #include <cmvision/Blob.h>
 #include <cmvision/Blobs.h>
 
+#include <std_msgs/String.h>
+#include <string>
 
 #define IMAGE_HEIGHT 240
 #define IMAGE_WIDTH 640
@@ -30,6 +32,9 @@ bool spin_mode;
 bool wander_mode;
 bool avoid_mode;
 bool obstacle_detected;
+bool found_trash_mode;
+bool pickup_mode;
+bool move_trash_mode;
 
 ////////
 
@@ -62,6 +67,8 @@ void blobFollowerInit() {
   avoid_mode = false;
   obstacle_detected = false;
 
+  //TODO: for neatness, init all the ther states to false
+
   spin_direction = 1;
 }
 
@@ -77,15 +84,23 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
     goal_x = 0.0;
     int color_blob_count = 0;
     int color_area = 0;
-    int color_area_thresh = 2000; //can be used in noisy environments where there may be small patches of color
-    //int color_area_thresh = 0; //for clean environments
+    //int color_area_thresh = 2000; //can be used in noisy environments where there may be small patches of color
+    int color_area_thresh = 0; //for clean environments
 
     //find all the blobs that are COLOR and sum their x positions
     for (int i = 0; i < blobsIn.blob_count; i++){
-      if (blobsIn.blobs[i].red == 0 && blobsIn.blobs[i].green == 255 && blobsIn.blobs[i].blue == 0){
+      if (blobsIn.blobs[i].red == 255 && blobsIn.blobs[i].green == 0 && blobsIn.blobs[i].blue == 0){
         goal_x += blobsIn.blobs[i].x;
         color_blob_count++;
         color_area += blobsIn.blobs[i].area;
+
+        ROS_INFO_THROTTLE(1, "Bottom of blob is: %d", blobsIn.blobs[i].bottom);
+
+        //stop when we are near the trash (color blob is at bottom of screen)
+        if (blobsIn.blobs[i].bottom >= 479 && blobsIn.blobs[i].top >= 440){
+          found_trash_mode = true;
+          return;
+        }
       }
     }
 
@@ -115,7 +130,7 @@ cloud: the PointCloud message used to detect obstacles
 */
 void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
-  float z_thresh = 1.0;
+  float z_thresh = 0.5;
 
   //x and z position of the centroid
   float x = 0.0;
@@ -141,6 +156,13 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   x /= numValid;
   z /= numValid;
 
+  if (pickup_mode && numValid > 400 && z > 0.5 && z < 0.8){
+    pickup_mode = false;
+    move_trash_mode = true;
+    system("rosrun sound_play say.py 'Thank you'");
+    return;
+  }
+
   //obstacle detected!
   if (numValid > 2000){
     ROS_INFO_THROTTLE(1, "Centroid detected at x: %f z: %f, with %d points", x, z, numValid);
@@ -164,6 +186,28 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   
 }
 
+/*
+Callback for heard voices. Recognizes words in the following patterns:
+
+*/
+void voiceCallBack(const std_msgs::String& msg){
+
+  const char* temp = msg.data.c_str();
+  ROS_INFO_THROTTLE(1, "Heard the following:\n%s", temp);
+}
+
+void foundTrash(){
+  ROS_INFO("About to play first audio");
+  system("rosrun sound_play say.py 'I found some trash'");
+  ROS_INFO("About to play second audio");
+  system("rosrun sound_play say.py 'Will you help me pick it up'");
+  ROS_INFO("Done speaking");
+
+  found_trash_mode = false;
+  pickup_mode = true;
+
+}
+
 
 int main (int argc, char** argv) {
   ros::init(argc, argv, "blobs_test");
@@ -180,6 +224,9 @@ int main (int argc, char** argv) {
   //subscribe to /blobs topic 
   ros::Subscriber blobsSubscriber = n.subscribe("/blobs", 100, blobsCallBack);
 
+  //subscribe to the /recognizer/output topic
+  ros::Subscriber voiceSubscriber = n.subscribe("/recognizer/output", 100, voiceCallBack);
+
   // publishing the geometry message twist message
   ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
 
@@ -195,11 +242,24 @@ int main (int argc, char** argv) {
   while(ros::ok()){
     geometry_msgs::Twist cmd;
 
-    /*
+    
     //at the goal, stop
     if (done_mode){
       break;
     }
+    //found trash, ask for help picking it up
+    else if (found_trash_mode){
+      foundTrash();
+    }
+    //wait until person helps out
+    else if (pickup_mode){
+      //TODO: write code to make sure that you can't get out of pickup mode until someone helps out
+    }
+    //received trash
+    else if (move_trash_mode){
+      break;
+    }
+
     //there is an obstacle, avoid it
     else if (avoid_mode){
       //if in avoid mode and we see the obstacle, spin 90 degrees away from it
@@ -251,7 +311,7 @@ int main (int argc, char** argv) {
       double z = 0.25 * ( (center - goal_x) / std::abs(center - goal_x) );
       cmd.angular.z = z;
     }
-    */
+    
 
     //publish the goal and sleep till the next loop
     cmdpub_.publish(cmd);
