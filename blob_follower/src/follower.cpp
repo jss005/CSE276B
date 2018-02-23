@@ -46,6 +46,10 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 ros::Publisher cmdpub_; //publisher for movement commands
 
+/*
+Puts the robot into spin mode. Sets the enter time for use in determining when to
+transition into wander mode.
+*/
 void enterSpinMode(){
   if (!spin_mode){
     spin_mode_enter_time = ros::Time::now().toSec();
