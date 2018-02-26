@@ -21,6 +21,8 @@ Description: This program subscribes to the /blobs and /camera/depth/points topi
 #include <cmvision/Blob.h>
 #include <cmvision/Blobs.h>
 
+#include <string>
+
 #define IMAGE_HEIGHT 240
 #define IMAGE_WIDTH 640
 #define SPIN_SPEED 0.5
@@ -34,11 +36,25 @@ bool obstacle_detected;
 
 ////////
 
+// Colors to follow
+int COLOR_BLUE_R  = 0;
+int COLOR_BLUE_G  = 0;
+int COLOR_BLUE_B  = 255;
+
+int COLOR_BLACK_R  = 0;
+int COLOR_BLACK_G  = 0;
+int COLOR_BLACK_B  = 0;
+
+int follow_color_r;
+int follow_color_g;
+int follow_color_b;
+
+
 int avoid_direction; //which way to turn to avoid an obstacle. + for left, - for right
 int spin_direction; //direction to spin when searching. Default 1, but set to be opposite of avoid_direction
 int spin_mode_enter_time;
 
-int done_criteria = 80000; //Area of color that must be present to decide we are at the goal
+int done_criteria = 45000; //Area of color that must be present to decide we are at the goal
 double center = 320.0; //Center of the screen
 double goal_x = 0.0; //Average x position of color blobs
 
@@ -46,10 +62,6 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 ros::Publisher cmdpub_; //publisher for movement commands
 
-/*
-Puts the robot into spin mode. Sets the enter time for use in determining when to
-transition into wander mode.
-*/
 void enterSpinMode(){
   if (!spin_mode){
     spin_mode_enter_time = ros::Time::now().toSec();
@@ -82,18 +94,21 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
     goal_x = 0.0;
     int color_blob_count = 0;
     int color_area = 0;
-    int color_area_thresh = 2000; //can be used in noisy environments where there may be small patches of color
+    int color_area_thresh = 1000; //can be used in noisy environments where there may be small patches of color
     //int color_area_thresh = 0; //for clean environments
 
     //find all the blobs that are COLOR and sum their x positions
     for (int i = 0; i < blobsIn.blob_count; i++){
-      if (blobsIn.blobs[i].red == 0 && blobsIn.blobs[i].green == 255 && blobsIn.blobs[i].blue == 0){
+      if (blobsIn.blobs[i].red == follow_color_r && 
+          blobsIn.blobs[i].green == follow_color_g && 
+          blobsIn.blobs[i].blue == follow_color_b){
         goal_x += blobsIn.blobs[i].x;
         color_blob_count++;
         color_area += blobsIn.blobs[i].area;
       }
     }
 
+    ROS_INFO_THROTTLE(1, "Blue color area: %d", color_area);
     //check if we are at the target
     if (color_area > done_criteria){
       done_mode = true;
@@ -120,7 +135,7 @@ cloud: the PointCloud message used to detect obstacles
 */
 void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
-  float z_thresh = 0.5;
+  float z_thresh = 0.4;
 
   //x position of the centroid
   float x = 0.0;
@@ -145,7 +160,7 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
 
   //obstacle detected!
   if (numValid > 4000){
-    //ROS_INFO_THROTTLE(1, "Centroid detected at x: %f, with %d points", x, numValid);
+    ROS_INFO_THROTTLE(1, "Centroid detected at x: %f, with %d points", x, numValid);
 
     obstacle_detected = true;
 
@@ -168,6 +183,7 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
 
 
 int main (int argc, char** argv) {
+
   ros::init(argc, argv, "blobs_test");
 
   // Create handle that will be used for both subscribing and publishing. 
@@ -190,6 +206,25 @@ int main (int argc, char** argv) {
   // Set the loop frequency in Hz.
   ros::Rate loop_rate(10);
    
+  //get the color to follow from the args passed in
+  if (argc < 2) {
+    ROS_INFO("Error, must pass in a color to follow!");
+    return -1;
+  }
+  ROS_INFO_THROTTLE(1, "Argument passed in was %s", argv[1]);
+  if (std::string(argv[1]).compare("BLUE") == 0){
+    ROS_INFO("Argument passed in was BLUE");
+    follow_color_r = COLOR_BLUE_R;
+    follow_color_g = COLOR_BLUE_G;
+    follow_color_b = COLOR_BLUE_B;
+  }
+  else if (std::string(argv[1]).compare("BLACK") == 0){
+    ROS_INFO("Argument passed in was BLACK");
+    follow_color_r = COLOR_BLACK_R;
+    follow_color_g = COLOR_BLACK_G;
+    follow_color_b = COLOR_BLACK_B;
+  }
+
   //runtime loop
   while(ros::ok()){
     geometry_msgs::Twist cmd;
@@ -222,7 +257,7 @@ int main (int argc, char** argv) {
     //don't know where target is, spin
     else if (spin_mode){
       int t0 = ros::Time::now().toSec();
-      if (t0 - spin_mode_enter_time < 10){
+      if (t0 - spin_mode_enter_time < 25){
         ROS_INFO("Spinning");
         cmd.angular.z = spin_direction * SPIN_SPEED;
       }

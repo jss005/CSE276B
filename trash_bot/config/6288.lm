@@ -1,0 +1,80 @@
+Language model created by QuickLM on Sun Feb 25 16:17:32 EST 2018
+Copyright (c) 1996-2010 Carnegie Mellon University and Alexander I. Rudnicky
+
+The model is in standard ARPA format, designed by Doug Paul while he was at MITRE.
+
+The code that was used to produce this language model is available in Open Source.
+Please visit http://www.speech.cs.cmu.edu/tools/ for more information
+
+The (fixed) discount mass is 0.5. The backoffs are computed using the ratio method.
+This model based on a corpus of 9 sentences and 13 words
+
+\data\
+ngram 1=13
+ngram 2=23
+ngram 3=21
+
+\1-grams:
+-0.9700 </s> -0.3010
+-0.9700 <s> -0.2093
+-1.6232 CAN -0.2852
+-1.6232 GARBAGE -0.2518
+-1.9243 IN -0.2958
+-1.4472 IS -0.2632
+-1.6232 RECYCLABLE -0.2518
+-1.6232 RECYCLE -0.2218
+-1.2253 THAT -0.2280
+-1.9243 THE -0.2852
+-1.9243 THROW -0.2744
+-1.4472 TRASH -0.2518
+-1.6232 YOU -0.2906
+
+\2-grams:
+-1.2553 <s> GARBAGE 0.0000
+-1.2553 <s> RECYCLABLE 0.0000
+-1.2553 <s> RECYCLE -0.1761
+-0.7782 <s> THAT -0.1461
+-1.2553 <s> TRASH 0.0000
+-0.9542 <s> YOU 0.0000
+-0.6021 CAN RECYCLE -0.1761
+-0.6021 CAN THROW 0.0000
+-0.3010 GARBAGE </s> -0.3010
+-0.3010 IN THE 0.0000
+-0.7782 IS GARBAGE 0.0000
+-0.7782 IS RECYCLABLE 0.0000
+-0.7782 IS TRASH 0.0000
+-0.3010 RECYCLABLE </s> -0.3010
+-0.6021 RECYCLE </s> -0.3010
+-0.6021 RECYCLE THAT -0.2553
+-1.0000 THAT </s> -0.3010
+-1.0000 THAT IN 0.0000
+-0.5229 THAT IS 0.0000
+-0.3010 THE TRASH 0.0000
+-0.3010 THROW THAT -0.2553
+-0.3010 TRASH </s> -0.3010
+-0.3010 YOU CAN 0.0000
+
+\3-grams:
+-0.3010 <s> GARBAGE </s>
+-0.3010 <s> RECYCLABLE </s>
+-0.3010 <s> RECYCLE </s>
+-0.3010 <s> THAT IS
+-0.3010 <s> TRASH </s>
+-0.3010 <s> YOU CAN
+-0.3010 CAN RECYCLE THAT
+-0.3010 CAN THROW THAT
+-0.3010 IN THE TRASH
+-0.3010 IS GARBAGE </s>
+-0.3010 IS RECYCLABLE </s>
+-0.3010 IS TRASH </s>
+-0.3010 RECYCLE THAT </s>
+-0.3010 THAT IN THE
+-0.7782 THAT IS GARBAGE
+-0.7782 THAT IS RECYCLABLE
+-0.7782 THAT IS TRASH
+-0.3010 THE TRASH </s>
+-0.3010 THROW THAT IN
+-0.6021 YOU CAN RECYCLE
+-0.6021 YOU CAN THROW
+
+\end\

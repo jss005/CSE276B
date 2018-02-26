@@ -27,17 +27,29 @@ Description:
 #define SPIN_SPEED 0.5
 
 // STATE VARIABLES
-bool done_mode;
 bool spin_mode;
-bool wander_mode;
-bool avoid_mode;
-bool obstacle_detected;
 bool found_trash_mode;
 bool pickup_mode;
-bool move_trash_mode;
+bool given_trash_mode;
+bool asking_destination_mode;
+bool at_bin_mode;
 
 ////////
 
+// Colors to follow
+int COLOR_BLUE_R  = 0;
+int COLOR_BLUE_G  = 0;
+int COLOR_BLUE_B  = 255;
+
+int COLOR_BLACK_R  = 0;
+int COLOR_BLACK_G  = 0;
+int COLOR_BLACK_B  = 0;
+
+int follow_color_r;
+int follow_color_g;
+int follow_color_b;
+
+//misc
 int avoid_direction; //which way to turn to avoid an obstacle. + for left, - for right
 int spin_direction; //direction to spin when searching. Default 1, but set to be opposite of avoid_direction
 int spin_mode_enter_time;
@@ -62,15 +74,36 @@ void enterSpinMode(){
 Function to initialize states and other variables
 */
 void blobFollowerInit() {
-  done_mode = false;
   enterSpinMode();
-  avoid_mode = false;
-  obstacle_detected = false;
-
-  //TODO: for neatness, init all the ther states to false
+  
+  found_trash_mode = false;
+  pickup_mode = false;
+  given_trash_mode = false;
+  asking_destination_mode = false;
+  at_bin_mode = false;
 
   spin_direction = 1;
 }
+
+/*
+Spin the robot in the given direction for a given amount of seconds
+*/
+void spin_bot(int direction, int duration_sec){
+  ros::Rate loop_rate(10);
+  ros::NodeHandle n;
+  ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
+  
+
+  int t0 = ros::Time::now().toSec();
+  while (ros::Time::now().toSec() - t0 < duration_sec){
+    geometry_msgs::Twist cmd;
+    cmd.angular.z = direction * SPIN_SPEED * 3;
+    cmdpub_.publish(cmd);
+    ros::spinOnce();
+    loop_rate.sleep();
+  }
+}
+
 
 /*
 Callback function for color blobs. Searches for the target's color and sets spin_mode to false
@@ -86,6 +119,11 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
     int color_area = 0;
     //int color_area_thresh = 2000; //can be used in noisy environments where there may be small patches of color
     int color_area_thresh = 0; //for clean environments
+
+    //DO NOT go goal searching if found trash and waiting for pickup
+    if (pickup_mode || found_trash_mode || asking_destination_mode || given_trash_mode || at_bin_mode){
+      return;
+    }
 
     //find all the blobs that are COLOR and sum their x positions
     for (int i = 0; i < blobsIn.blob_count; i++){
@@ -104,12 +142,9 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
       }
     }
 
-    //check if we are at the target
-    if (color_area > done_criteria){
-      done_mode = true;
-    }
+
     //get the average x position of all COLOR blobs
-    else if (color_blob_count > 0 && color_area > color_area_thresh){
+    if (color_blob_count > 0 && color_area > color_area_thresh){
       //End spin_mode since the goal has been detected
       spin_mode = false;
       goal_x = (goal_x / color_blob_count);
@@ -130,7 +165,7 @@ cloud: the PointCloud message used to detect obstacles
 */
 void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
-  float z_thresh = 0.5;
+  float z_thresh = 1.0;
 
   //x and z position of the centroid
   float x = 0.0;
@@ -156,34 +191,23 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   x /= numValid;
   z /= numValid;
 
-  if (pickup_mode && numValid > 400 && z > 0.5 && z < 0.8){
+  ROS_INFO_THROTTLE(1, "Centroid detected at x: %f z: %f, with %d points", x, z, numValid);
+
+  if (pickup_mode && numValid > 11000 && z > 0.4 && z < 0.7){
     pickup_mode = false;
-    move_trash_mode = true;
-    system("rosrun sound_play say.py 'Thank you'");
+    given_trash_mode = true;
     return;
   }
 
-  //obstacle detected!
-  if (numValid > 2000){
-    ROS_INFO_THROTTLE(1, "Centroid detected at x: %f z: %f, with %d points", x, z, numValid);
-
-    obstacle_detected = true;
-
-    if (spin_mode){
-      //if in spin mode that's fine, keep spinning
-    }
-    //otherwise, enter avoid_mode
-    else{
-      avoid_mode = true;
-      avoid_direction = x / std::abs(x);
-      spin_direction = -1 * avoid_direction;
-    }
+  //reset states when the trash is thrown away
+  if (at_bin_mode && numValid < 1000 && (z < 0.4 || z > 0.7) ){
+    ROS_INFO_THROTTLE(1, "Exiting because numValid = %d, z = %f", numValid, z);
+    ROS_INFO("I appreciate all the help");
+    system("rosrun sound_play say.py 'I appreciate all the help'");
+    blobFollowerInit();
+    return;
   }
-  //no obstacle detected, 
-  else{ 
-    obstacle_detected = false;
-  }
-  
+
 }
 
 /*
@@ -192,14 +216,55 @@ Callback for heard voices. Recognizes words in the following patterns:
 */
 void voiceCallBack(const std_msgs::String& msg){
 
+  //exit callback if we don't care what people say
+  if (!asking_destination_mode){
+    return;
+  }
+
+  std::string data = msg.data;
+
+  //debug
   const char* temp = msg.data.c_str();
   ROS_INFO_THROTTLE(1, "Heard the following:\n%s", temp);
+
+  //listen for the human telling the robot if they should throw it in the
+  //trash or recycle bin.
+  if (data.find("recycle") != std::string::npos ||
+      data.find("recyclable") != std::string::npos) {
+
+    asking_destination_mode = false;
+
+    ROS_INFO("Alright I will throw this in the recycle bin");
+    system("rosrun sound_play say.py 'Alright I will throw this in the recycle bin'");
+    system("rosrun blob_follower blob_follower BLUE");
+    ROS_INFO("Please help me throw this into the recycle bin");
+    system("rosrun sound_play say.py 'Please help me throw this into the recycle bin'");
+    at_bin_mode = true;
+    spin_bot(1, 5);
+  }
+  else if (data.find("trash") != std::string::npos ||
+           data.find("garbage") != std::string::npos){
+  
+    asking_destination_mode = false;
+
+    ROS_INFO("Alright I will throw this in the trash bin");
+    system("rosrun sound_play say.py 'Alright I will throw this in the trash bin'");
+    system("rosrun blob_follower blob_follower BLACK");
+    ROS_INFO("Please help me throw this into the trash bin");
+    system("rosrun sound_play say.py 'Please help me throw this into the trash bin'");
+    at_bin_mode = true;
+    spin_bot(1, 5);
+  }
+  
+
 }
 
+
+
 void foundTrash(){
-  ROS_INFO("About to play first audio");
+  ROS_INFO("I found some trash");
   system("rosrun sound_play say.py 'I found some trash'");
-  ROS_INFO("About to play second audio");
+  ROS_INFO("Will you help me pick it up?");
   system("rosrun sound_play say.py 'Will you help me pick it up'");
   ROS_INFO("Done speaking");
 
@@ -210,12 +275,11 @@ void foundTrash(){
 
 
 int main (int argc, char** argv) {
-  ros::init(argc, argv, "blobs_test");
+  ros::init(argc, argv, "trash_bot");
 
   // Create handle that will be used for both subscribing and publishing. 
   ros::NodeHandle n;
   
-  //system("rosrun blob_follower blob_follower BLUE");
   //ROS_INFO("Exited from other program");
 
   //subscribe to /PointCloud topic 
@@ -242,67 +306,41 @@ int main (int argc, char** argv) {
   while(ros::ok()){
     geometry_msgs::Twist cmd;
 
-    
-    //at the goal, stop
-    if (done_mode){
-      break;
-    }
+        
     //found trash, ask for help picking it up
-    else if (found_trash_mode){
+    if (found_trash_mode){
       foundTrash();
     }
     //wait until person helps out
     else if (pickup_mode){
-      //TODO: write code to make sure that you can't get out of pickup mode until someone helps out
+      //wait for the person to help pick up the trash
     }
     //received trash
-    else if (move_trash_mode){
-      break;
+    else if (given_trash_mode){
+      ROS_INFO("Thank you");
+      system("rosrun sound_play say.py 'Thank you'");
+      spin_bot(-1, 1);
+      spin_bot(1, 1);
+      spin_bot(-1, 1);
+      spin_bot(1, 1);
+      given_trash_mode = false;
+      asking_destination_mode = true;
+
+      //ask once if this is trash or recyclable
+      system("rosrun sound_play say.py 'Is this recyclable or trash'");
+      ROS_INFO("Is this recyclable or trash");
+    }
+    else if (asking_destination_mode){
+      //wait for input for if object is trash or recyclable
+    }
+    else if (at_bin_mode){
+      //wait for the human to help throw away the trash
     }
 
-    //there is an obstacle, avoid it
-    else if (avoid_mode){
-      //if in avoid mode and we see the obstacle, spin 90 degrees away from it
-      if (obstacle_detected){
-        cmd.angular.z = avoid_direction * 2; //spin 90 degrees
-      }
-      //if in avoid mode and we don't see the obstacle, move forward for 2 seconds or until
-      //a new obstacle is detected
-      else{
-        int t0 = ros::Time::now().toSec();
-        while (!obstacle_detected && ros::Time::now().toSec() - t0 < 2){
-          geometry_msgs::Twist avoid_cmd;
-          avoid_cmd.linear.x = 0.2;
-          cmdpub_.publish(avoid_cmd);
-          ros::spinOnce();
-          loop_rate.sleep();
-          avoid_mode = false;
-          enterSpinMode();
-        }
-      }
-    }
     //don't know where target is, spin
     else if (spin_mode){
-      int t0 = ros::Time::now().toSec();
-      if (t0 - spin_mode_enter_time < 10){
-        ROS_INFO("Spinning");
-        cmd.angular.z = spin_direction * SPIN_SPEED;
-      }
-      //wander forwards for 3 seconds if we've been spinning for too long
-      else{
-        ROS_INFO("Wandering!");
-        spin_mode = false;
-        wander_mode = true;
-        while (!obstacle_detected && ros::Time::now().toSec() - t0 < 3){
-          geometry_msgs::Twist wander_cmd;
-          wander_cmd.linear.x = 0.2;
-          cmdpub_.publish(wander_cmd);
-          ros::spinOnce();
-          loop_rate.sleep();
-        }
-        wander_mode = false;
-        enterSpinMode();
-      }
+      ROS_INFO("Spinning");
+      cmd.angular.z = spin_direction * SPIN_SPEED;
     }
     //have the goal in sight, move to it
     else {
@@ -312,12 +350,11 @@ int main (int argc, char** argv) {
       cmd.angular.z = z;
     }
     
-
+    
     //publish the goal and sleep till the next loop
     cmdpub_.publish(cmd);
     ros::spinOnce();
     loop_rate.sleep();
   } 
-  ROS_INFO("At the target!");
   return 0;
 }
