@@ -84,6 +84,9 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 ros::Publisher cmdpub_; //publisher for movement commands
 
+/*
+Puts the robot into spin mode. Logs the time entered so that wandering can be implemented
+*/
 void enterSpinMode(){
   if (!spin_mode){
     spin_mode_enter_time = ros::Time::now().toSec();
@@ -235,7 +238,12 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
 
 /*
 Callback for heard voices. Recognizes words in the following patterns:
-
+trash
+garbage
+recycle
+recyclable
+that is trash
+that is recyclable
 */
 void voiceCallBack(const std_msgs::String& msg){
 
@@ -263,7 +271,7 @@ void voiceCallBack(const std_msgs::String& msg){
     ROS_INFO("Please help me throw this into the recycle bin");
     system("rosrun sound_play say.py 'Please help me throw this into the recycle bin'");
     at_bin_mode = true;
-    spin_bot(1, 4);
+    spin_bot(1, 4); //"offer" the object
   }
   else if (data.find("trash") != std::string::npos ||
            data.find("garbage") != std::string::npos){
@@ -276,7 +284,7 @@ void voiceCallBack(const std_msgs::String& msg){
     ROS_INFO("Please help me throw this into the trash bin");
     system("rosrun sound_play say.py 'Please help me throw this into the trash bin'");
     at_bin_mode = true;
-    spin_bot(1, 4);
+    spin_bot(1, 4); //"offer" the object
   }
   
 
