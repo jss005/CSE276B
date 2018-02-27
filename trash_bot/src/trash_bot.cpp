@@ -8,6 +8,24 @@ as a red object). When the trash is found, the robot will approach it and ask fo
 Upon receiving help, the robot will move side to side "happily" then ask if it is recyclable or trash.
 When told which one it is, the robot will seek out the appropriate trash can and approach it. Then, the
 robot will ask for help throwing the trash away. Finally, the robot will thank the person for helping.
+
+Usage:
+roscore
+roslaunch turtlebot_bringup minimal.launch
+roslaunch astra_launch astra_pro.launch
+
+rosrun cmvision colorgui image:=/camera/rgb/image_raw
+<close it when done>
+roslaunch cmvision cmvisionlaunch image:=/camera/rgb/image_raw
+<Ctrl-C>
+rosparam set /cmvision/color_file ~/turtlebot_ws/src/cmvision/colors.txt
+rosrun cmvision cmvision image:=/camera/rgb/image_raw
+
+roslaunch trash_bot recognizer.launch
+
+rosrun sound_play soundplay_node.py
+
+rosrun trash_bot trash_bot
 */
 
 #include <ros/ros.h>
