@@ -54,7 +54,7 @@ int avoid_direction; //which way to turn to avoid an obstacle. + for left, - for
 int spin_direction; //direction to spin when searching. Default 1, but set to be opposite of avoid_direction
 int spin_mode_enter_time;
 
-int done_criteria = 45000; //Area of color that must be present to decide we are at the goal
+int done_criteria = 55000; //Area of color that must be present to decide we are at the goal
 double center = 320.0; //Center of the screen
 double goal_x = 0.0; //Average x position of color blobs
 
@@ -94,8 +94,8 @@ void blobsCallBack (const cmvision::Blobs& blobsIn) {
     goal_x = 0.0;
     int color_blob_count = 0;
     int color_area = 0;
-    int color_area_thresh = 1000; //can be used in noisy environments where there may be small patches of color
-    //int color_area_thresh = 0; //for clean environments
+    //int color_area_thresh = 500; //can be used in noisy environments where there may be small patches of color
+    int color_area_thresh = 0; //for clean environments
 
     //find all the blobs that are COLOR and sum their x positions
     for (int i = 0; i < blobsIn.blob_count; i++){

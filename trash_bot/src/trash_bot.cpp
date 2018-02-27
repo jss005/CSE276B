@@ -1,9 +1,13 @@
 /*
 Name: trash_bot.cpp
 Author: Jeremy Smith
-Date: 
+Date: 2/26/2018
 
-Description: 
+Description: This program has the turtlebot roam around in search of trash on the ground (represented
+as a red object). When the trash is found, the robot will approach it and ask for help picking it up.
+Upon receiving help, the robot will move side to side "happily" then ask if it is recyclable or trash.
+When told which one it is, the robot will seek out the appropriate trash can and approach it. Then, the
+robot will ask for help throwing the trash away. Finally, the robot will thank the person for helping.
 */
 
 #include <ros/ros.h>
@@ -165,7 +169,7 @@ cloud: the PointCloud message used to detect obstacles
 */
 void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
-  float z_thresh = 1.0;
+  float z_thresh = 0.7;
 
   //x and z position of the centroid
   float x = 0.0;
@@ -193,6 +197,7 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
 
   ROS_INFO_THROTTLE(1, "Centroid detected at x: %f z: %f, with %d points", x, z, numValid);
 
+  //exit pickup_mode when the person gives the robot the trash object
   if (pickup_mode && numValid > 11000 && z > 0.4 && z < 0.7){
     pickup_mode = false;
     given_trash_mode = true;
@@ -200,7 +205,7 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   }
 
   //reset states when the trash is thrown away
-  if (at_bin_mode && numValid < 1000 && (z < 0.4 || z > 0.7) ){
+  if (at_bin_mode && numValid < 1000 && (z < 0.4 || z > 0.7 || isnan(z)) ){
     ROS_INFO_THROTTLE(1, "Exiting because numValid = %d, z = %f", numValid, z);
     ROS_INFO("I appreciate all the help");
     system("rosrun sound_play say.py 'I appreciate all the help'");
@@ -240,7 +245,7 @@ void voiceCallBack(const std_msgs::String& msg){
     ROS_INFO("Please help me throw this into the recycle bin");
     system("rosrun sound_play say.py 'Please help me throw this into the recycle bin'");
     at_bin_mode = true;
-    spin_bot(1, 5);
+    spin_bot(1, 4);
   }
   else if (data.find("trash") != std::string::npos ||
            data.find("garbage") != std::string::npos){
@@ -253,14 +258,16 @@ void voiceCallBack(const std_msgs::String& msg){
     ROS_INFO("Please help me throw this into the trash bin");
     system("rosrun sound_play say.py 'Please help me throw this into the trash bin'");
     at_bin_mode = true;
-    spin_bot(1, 5);
+    spin_bot(1, 4);
   }
   
 
 }
 
 
-
+/*
+Implements some behavior for when a trash object is found
+*/
 void foundTrash(){
   ROS_INFO("I found some trash");
   system("rosrun sound_play say.py 'I found some trash'");
@@ -315,7 +322,7 @@ int main (int argc, char** argv) {
     else if (pickup_mode){
       //wait for the person to help pick up the trash
     }
-    //received trash
+    //received trash. Spin happily
     else if (given_trash_mode){
       ROS_INFO("Thank you");
       system("rosrun sound_play say.py 'Thank you'");
@@ -349,7 +356,6 @@ int main (int argc, char** argv) {
       double z = 0.25 * ( (center - goal_x) / std::abs(center - goal_x) );
       cmd.angular.z = z;
     }
-    
     
     //publish the goal and sleep till the next loop
     cmdpub_.publish(cmd);
