@@ -27,6 +27,9 @@
 #include <actionlib/client/simple_action_client.h>
 #include "sound_play/sound_play.h"
 
+#include <std_msgs/String.h>
+#include <string>
+
 std::string path_to_sounds;
 
 /** function declarations **/
@@ -47,6 +50,22 @@ double yOffice3 = 13.50;
 
 bool goalReached = false;
 
+/*
+Callback for voices
+*/
+void voiceCallBack(const std_msgs::String& msg){
+
+  std::string data = msg.data;
+
+  //debug
+  const char* temp = msg.data.c_str();
+  ROS_INFO_THROTTLE(1, "Heard the following:\n%s", temp);
+
+}
+
+
+
+
 int main(int argc, char** argv){
 	ros::init(argc, argv, "map_navigation_node");
 	ros::NodeHandle n;
@@ -55,6 +74,33 @@ int main(int argc, char** argv){
 	path_to_sounds = "/home/ros/catkin_ws/src/gaitech_edu/src/sounds/";
 	//sc.playWave(path_to_sounds+"short_buzzer.wav");
 	//tell the action client that we want to spin a thread by default
+
+  ros::Rate loop_rate(10);
+
+  //subscribe to the /recognizer/output topic
+  ros::Subscriber voiceSubscriber = n.subscribe("/recognizer/output", 100, voiceCallBack);
+
+  while (1){
+    
+    ROS_INFO("Type in name of object");
+    char input[100];
+	  std::cin.getline(input, sizeof(input));
+
+    if (std::string(input) == "q"){
+      break;
+    }
+
+    //ROS_INFO_THROTTLE(1, "You typed the following: %s", input);
+    std::string command = 
+        std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/googler.py ") + 
+        std::string(input);
+    system(command.c_str());
+
+    ros::spinOnce();
+    loop_rate.sleep();
+  }
+
+  /*
 
 	char choice = 'q';
 	do{
@@ -81,6 +127,9 @@ int main(int argc, char** argv){
 			}
 		}
 	}while(choice !='q');
+
+  */
+
 	return 0;
 }
 

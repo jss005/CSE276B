@@ -22,11 +22,12 @@ if len(sys.argv) < 2:
   sys.exit(-1)
 
 #generate the url
-word = sys.argv[1]
+word = ' '.join(sys.argv[1:])
 words = re.sub(" +", '_', word)
 url = "https://en.wikipedia.org/wiki/" + words
 
-try:
+#try:
+if True:
   #grab the data from the web page
   response = urllib2.urlopen(url)
   html = response.read()
@@ -45,7 +46,7 @@ try:
   print sentence
 
   #write the sentence into the learned objects directory
-  filename = "../learned_objects/" + words + "/description.txt"
+  filename = "src/turtlebot_apps/hernando/learned_objects/" + words + "/description.txt"
   if not os.path.exists(os.path.dirname(filename)):
     os.makedirs(os.path.dirname(filename))
   fp = open(filename, 'w')
@@ -55,6 +56,6 @@ try:
 
 #error occurs when there is no webpage for the result
 #likely occurs when a non-basic description is given
-except:
+#except:
   print "I couldn't find a definition for '%s'. Can you give me a more basic description?" % word
   sys.exit(-1)
