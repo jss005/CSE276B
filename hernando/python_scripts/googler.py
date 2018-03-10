@@ -17,13 +17,19 @@ import os
 
 
 if len(sys.argv) < 2:
-  print "Error: need a word to search"
-  print "Usage: python googler.py 'word(s) to search'"
+  print "Error: need an object name to search"
+  print "Usage: python googler.py 'filename containing word(s) to search'"
   sys.exit(-1)
 
+#read in the object name 
+obj_name_file = sys.argv[1]
+fp = open(obj_name_file)
+words = fp.readlines()[0]
+fp.close()
+
+
 #generate the url
-word = ' '.join(sys.argv[1:])
-words = re.sub(" +", '_', word)
+words = re.sub(" +", '_', words)
 url = "https://en.wikipedia.org/wiki/" + words
 
 #try:
