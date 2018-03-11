@@ -14,6 +14,7 @@ import re
 import urllib2
 import sys
 import os
+import shutil
 
 
 if len(sys.argv) < 2:
@@ -32,8 +33,7 @@ fp.close()
 words = re.sub(" +", '_', words)
 url = "https://en.wikipedia.org/wiki/" + words
 
-#try:
-if True:
+try:
   #grab the data from the web page
   response = urllib2.urlopen(url)
   html = response.read()
@@ -58,10 +58,20 @@ if True:
   fp = open(filename, 'w')
   fp.write(sentence)
   fp.close()
-  sys.exit(0)
+
+  #move images into the learned objects directory and remove .ini files
+  images = [f for f in os.listdir("/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/temp") \
+            if os.path.isfile("/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/temp/" + f)]
+  for img in images:
+    if img.endswith(".jpg"):
+      shutil.move("/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/temp/" + img,\
+                  "/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/learned_objects/" + words)
+    elif img.endswith(".ini"):
+      os.remove("/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/temp/" + img)
+  
 
 #error occurs when there is no webpage for the result
 #likely occurs when a non-basic description is given
-#except:
-  print "I couldn't find a definition for '%s'. Can you give me a more basic description?" % word
+except:
+  print "I couldn't find a definition for '%s'. Can you give me a more basic description?" % words
   sys.exit(-1)

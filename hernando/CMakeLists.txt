@@ -11,6 +11,12 @@ find_package(catkin REQUIRED COMPONENTS
   pocketsphinx
   tf
   sound_play
+  nodelet
+  sensor_msgs
+  pcl_conversions
+  pcl_ros
+  depth_image_proc
+  kobuki_msgs
 )
 
 ## System dependencies are found with CMake's conventions

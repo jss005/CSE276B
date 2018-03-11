@@ -11,41 +11,127 @@
 
 #include <std_msgs/String.h>
 #include <string>
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_types.h>
+#include <nodelet/nodelet.h>
+#include <kobuki_msgs/BumperEvent.h>
+
 
 #include <thread>
 
 
 /*DEFINES*/
 //coordinates for points of interests
-#define X_LAB 6.65
-#define Y_LAB -1.00
-#define X_COMMON_AREA 9.47
-#define Y_COMMON_AREA 0.68
+#define X_LAB -1.9
+#define Y_LAB -0.04
+#define X_COMMON_AREA -8.5
+#define Y_COMMON_AREA 1.14
 
 #define SPIN_SPEED 0.5
+#define IMAGE_HEIGHT 240
+#define IMAGE_WIDTH 640
+
+typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
 /*STATE VARIABLES*/
 bool wait_mode;
 bool explore_mode;
+bool found_user;
+bool requesting_interaction;
+bool requesting_object;
 bool requesting_object_name;
+
+int explore_mode_enter_time;
 
 /*FUNCTIONS*/
 
 void initStates(){
+  explore_mode_enter_time = 0;
   wait_mode = true;
   explore_mode = false;
+}
+
+void enterExploreMode(){
+  ROS_INFO("Hello, would anyone like to interact with me?");
+  sound_play::SoundClient sc;
+  sc.voiceSound("Hello, would anyone like to interact with me?").play();
+  explore_mode_enter_time = ros::Time::now().toSec();
+  explore_mode = true;
 }
 
 /*
 Callback for voices
 */
-void voiceCallBack(const std_msgs::String& msg){
+void voiceCallback(const std_msgs::String& msg){
 
   std::string data = msg.data;
 
   //debug
   const char* temp = msg.data.c_str();
   ROS_INFO_THROTTLE(1, "Heard the following:\n%s", temp);
+
+}
+
+void requestInteraction(){
+  ROS_INFO("Hello there, would you like to help me? If so, push on my base");
+  sound_play::SoundClient sc;
+  sc.voiceSound("Hello there, would you like to help me? If so, push on my base").play();
+}
+
+/*
+Callback function for point clouds.  
+
+cloud: the PointCloud message used to detect obstacles
+*/
+void cloud_cb (const PointCloud::ConstPtr& cloud) {
+  int numValid = 0;
+  float z_thresh = 2.0;
+
+  float x_thresh = 150;
+  int person_thresh = 30000;
+  int wall_thresh = 45000;
+
+  //x and z position of the centroid
+  float x = 0.0;
+  float z = 0.0;
+
+  //find potential obstacles
+  for (int k = 0; k < IMAGE_HEIGHT; k++){
+    for (int i = 0; i < IMAGE_WIDTH; i++){
+      const pcl::PointXYZ &pt = cloud->points[640*(180+k)+(i)];
+
+      //ignore invalid points and points out of range
+      if (isnan(pt.z) || pt.z > z_thresh)
+        continue;
+
+      if (i < (IMAGE_WIDTH/2) - x_thresh || i > (IMAGE_WIDTH/2) + x_thresh)
+        continue;
+
+      x += pt.x;
+      z += pt.z;
+
+      numValid++;
+    }
+  }
+
+  //average out x and z points within range
+  x /= numValid;
+  z /= numValid;
+
+  if (numValid > person_thresh && numValid < wall_thresh && explore_mode){
+    explore_mode = false;
+    found_user = true;
+    ROS_INFO_THROTTLE(1, "Centroid detected at x: %f z: %f, with %d points", x, z, numValid);
+  }
+  //TODO: test this to make sure it is valid
+  //go back to explore mode if the person leaves
+  //else if (numValid < person_thresh && requesting_interaction){
+  //  requesting_interaction = false;
+  //  enterExploreMode();
+  //}
 
 }
 
@@ -57,23 +143,30 @@ void lookupObject(){
 
   sound_play::SoundClient sc;
   sc.voiceSound("Please type in the name of this object on my keyboard").play();
+  ROS_INFO("Please type in the name of this object on my keyboard");
 
-  //prompt the user to input the object name
-  std::string prompt = 
-      std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/init_object_prompt.py");
-  system(prompt.c_str());
+  int result = -1;
 
-  //google the object
-  std::string command = 
-      std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/googler.py ")
-    + std::string("~/turtlebot_ws/src/turtlebot_apps/hernando/temp/obj_name.txt");
-  system(command.c_str());
+  //loop until the user inputs a valid word - TODO: there should be exit criteria if user gives up
+  while (result != 0){
+    //prompt the user to input the object name
+    std::string prompt = 
+        std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/init_object_prompt.py");
+    system(prompt.c_str());
 
-  //TODO: add code to the python to move all pictures in the temp directory
-  //into the learned_objects/<obj_name> directory. Note that this expects image_saver to have been run
-  //from the hernando/temp directory
-  //rosrun image_view image_saver image:=/camera/rgb/image_raw _save_all_image:=false 
-  //_filename_format:=frame%04i.jpg __name:=image_saver
+    //google the object
+    std::string command = 
+        std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/googler.py ")
+      + std::string("~/turtlebot_ws/src/turtlebot_apps/hernando/temp/obj_name.txt");
+  
+    result = system(command.c_str());
+    ROS_INFO_THROTTLE(1, "Result from googler: %d", result);
+    
+    if (result != 0){
+      sc.voiceSound("I could not find a definition for that. Can you give me a more basic description?").play();
+    }
+  }
+
 }
 
 /*
@@ -151,8 +244,6 @@ void learnObject(){
   system("rosservice call /image_saver/save");
   
   
-
-  system("rosservice call /image_saver/save");
 }
 
 /*
@@ -211,22 +302,36 @@ Return commands can only be given while the robot is exploring.
 */
 void commandLineCallBack(){
 
+  sound_play::SoundClient sc;
+
   while (1){
 
     ROS_INFO("commandLineCallBack: waiting for input");
     char input[100];
 	  std::cin.getline(input, sizeof(input));
 
+    bool success = false;
+
     //Navigate to the correct point of interest when input is given
     if (std::string(input).compare("explore") == 0 && wait_mode){
-      wait_mode = false;
-      explore_mode = true;
-      moveToGoal(X_COMMON_AREA, Y_COMMON_AREA);
+      success = moveToGoal(X_COMMON_AREA, Y_COMMON_AREA);
+      if (success){
+        wait_mode = false;
+        enterExploreMode();
+      }
     }
     else if (std::string(input).compare("return") == 0 && explore_mode){
       explore_mode = false;
       wait_mode = true;
-      moveToGoal(X_LAB, Y_LAB);
+      success = moveToGoal(X_LAB, Y_LAB);
+      if (success){
+        ROS_INFO("Press my bump sensor if you want to see what I learned");
+        sc.voiceSound("Press my bump sensor if you want to see what I learned").play();
+      }
+      else{
+        wait_mode = false;
+        enterExploreMode();
+      }
     }
     else{
       ROS_INFO("I can't perform that action right now");
@@ -236,6 +341,35 @@ void commandLineCallBack(){
 
 }
 
+void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
+  sound_play::SoundClient sc;
+  // Check for pressed/not pressed
+  if(bumperMessage.bumper == kobuki_msgs::BumperEvent::CENTER && 
+     bumperMessage.state == kobuki_msgs::BumperEvent::PRESSED){
+    ROS_INFO("BUMPER PRESSED!");
+  
+    if (requesting_interaction){
+      sc.voiceSound("Great! I'm trying to learn about different objects").play();
+      ROS_INFO("Great! I'm trying to learn about different objects.");
+      ROS_INFO("Please place anything on the ground in front of me so that I can see it");
+      sc.voiceSound("Please place anything on the ground in front of me so that I can see it").play();
+      ROS_INFO("Then push on my base to let me know I can start learning");
+      sc.voiceSound("Then push on my base to let me know I can start learning").play();
+      requesting_interaction = false;
+      requesting_object = true;
+    }
+    else if (requesting_object) {
+      ROS_INFO("Great, thank you!");
+      sc.voiceSound("Great, thank you!").play();
+      requesting_object = false;
+      learnObject();
+      requesting_object_name = true;
+    }
+    else if (wait_mode){
+      system("python /home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/recite_objects.py");
+    }
+  }
+}
 
 int main(int argc, char** argv){
 	ros::init(argc, argv, "hernando");
@@ -245,25 +379,55 @@ int main(int argc, char** argv){
   ros::Rate loop_rate(10);
 
   //subscribe to the /recognizer/output topic
-  ros::Subscriber voiceSubscriber = n.subscribe("/recognizer/output", 100, voiceCallBack);
+  ros::Subscriber voiceSubscriber = n.subscribe("/recognizer/output", 100, voiceCallback);
+
+  //subscribe to /PointCloud topic 
+  ros::Subscriber PCSubscriber = n.subscribe<PointCloud>("/camera/depth/points", 1, cloud_cb);
+
+  //subscribe to the bumper topic
+  ros::Subscriber BumperSubscriber = n.subscribe("/mobile_base/events/bumper", 100, bumperCallback);
 
   //create thread to listen to the command line
   std::thread threadObj(commandLineCallBack);
 
   initStates();
 
+  //TODO: temporary, delete
+  //explore_mode = true;
+  //wait_mode = false;
+
   //main execution loop
   while (1){
-    
-    if (requesting_object_name){
+   
+    if (wait_mode){
+      //don't do anything
+    } 
+    else if (found_user){
+      found_user = false;
+      requesting_interaction = true;
+      requestInteraction();
+    }
+    else if (requesting_object){
+      //wait for object
+    }
+    else if (requesting_interaction){
+      //wait for interaction
+    }
+    //when requesting object name, prompt the user to input the object name
+    else if (requesting_object_name){
       lookupObject();
       requesting_object_name = false;
       explore_mode = true;
     }
-    //ROS_INFO("Spinning");
+    else if (explore_mode){
+      int now = ros::Time::now().toSec();
     
-    learnObject();
-    break;
+      if (now - explore_mode_enter_time > 30){
+        enterExploreMode();
+      }
+    }
+    
+    //learnObject();
 
     ros::spinOnce();
     loop_rate.sleep();
