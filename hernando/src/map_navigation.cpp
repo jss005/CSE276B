@@ -30,9 +30,11 @@
 #define X_COMMON_AREA -8.5
 #define Y_COMMON_AREA 1.14
 
-#define SPIN_SPEED 0.5
+#define SPIN_SPEED 0.6
 #define IMAGE_HEIGHT 240
 #define IMAGE_WIDTH 640
+
+#define SWIVEL_TOLERANCE 0.1
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
@@ -45,6 +47,9 @@ bool requesting_object;
 bool requesting_object_name;
 
 int explore_mode_enter_time;
+bool obstacle_detected;
+
+int swivel_dir;
 
 /*FUNCTIONS*/
 
@@ -52,9 +57,29 @@ void initStates(){
   explore_mode_enter_time = 0;
   wait_mode = true;
   explore_mode = false;
+
+  obstacle_detected = true;
+  swivel_dir = 0;
 }
 
+/*
+Resets the timer for entering explore mode, enters explore mode,
+and turns the robot until there are no longer any objects in view
+*/
 void enterExploreMode(){
+  ros::Rate loop_rate(10);
+  ros::NodeHandle n;
+  ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
+
+  while (obstacle_detected){
+    ROS_INFO("SWIVELING TO ENTER EXPLORE MODE");
+    geometry_msgs::Twist cmd;
+    cmd.angular.z = SPIN_SPEED;
+    cmdpub_.publish(cmd);
+    ros::spinOnce();
+    loop_rate.sleep();
+  }
+
   ROS_INFO("Hello, would anyone like to interact with me?");
   sound_play::SoundClient sc;
   sc.voiceSound("Hello, would anyone like to interact with me?").play();
@@ -90,9 +115,11 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
   float z_thresh = 2.0;
 
-  float x_thresh = 150;
+  //float x_thresh = 150;
+  float x_thresh = 15000;
   int person_thresh = 30000;
-  int wall_thresh = 45000;
+  //int wall_thresh = 45000;
+  int wall_thresh = 450000;
 
   //x and z position of the centroid
   float x = 0.0;
@@ -121,11 +148,36 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   x /= numValid;
   z /= numValid;
 
-  if (numValid > person_thresh && numValid < wall_thresh && explore_mode){
-    explore_mode = false;
-    found_user = true;
-    ROS_INFO_THROTTLE(1, "Centroid detected at x: %f z: %f, with %d points", x, z, numValid);
+  if (numValid > person_thresh && numValid < wall_thresh){
+    ROS_INFO_THROTTLE(1, "Obstacle detected with %d points", numValid);
+    obstacle_detected = true;
+
+    //exit explore mode if a user is found
+    if (explore_mode) {
+      explore_mode = false;
+      found_user = true;
+      ROS_INFO_THROTTLE(1, "FOUND USER at x: %f z: %f, with %d points", x, z, numValid);
+    }
+    //if trying to interact with a person, give a direction to swivel to follow the person
+    else if (requesting_interaction || requesting_object){
+      //if within tolerance, do not swivel
+      if (-SWIVEL_TOLERANCE < x && x < SWIVEL_TOLERANCE){
+        swivel_dir = 0;
+        ROS_INFO_THROTTLE(1, "NOT SWIVELING BECAUSE  x: %f ", x);
+      }
+      else {
+        ROS_INFO_THROTTLE(1, "SWIVELING BECAUSE  x: %f ", x);
+        swivel_dir = -x / std::abs(x);
+      }
+    }
   }
+  //no obstacle detected, no swiveling
+  else{ 
+    ROS_INFO_THROTTLE(1, "No obstacle detected because %d points", numValid);
+    obstacle_detected = false;
+    swivel_dir = 0;
+  }
+
   //TODO: test this to make sure it is valid
   //go back to explore mode if the person leaves
   //else if (numValid < person_thresh && requesting_interaction){
@@ -181,7 +233,7 @@ void spin_bot(int direction, double duration_sec){
   double t0 = ros::Time::now().toSec();
   while (ros::Time::now().toSec() - t0 < duration_sec){
     geometry_msgs::Twist cmd;
-    cmd.angular.z = direction * 0.3 * 2;
+    cmd.angular.z = direction * SPIN_SPEED;
     cmdpub_.publish(cmd);
     ros::spinOnce();
     loop_rate.sleep();
@@ -348,6 +400,7 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
      bumperMessage.state == kobuki_msgs::BumperEvent::PRESSED){
     ROS_INFO("BUMPER PRESSED!");
   
+    //if requesting interaction, bump sensor indicates someone is willing to interact
     if (requesting_interaction){
       sc.voiceSound("Great! I'm trying to learn about different objects").play();
       ROS_INFO("Great! I'm trying to learn about different objects.");
@@ -358,6 +411,7 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
       requesting_interaction = false;
       requesting_object = true;
     }
+    //if requesting objects, bump sensor indicates an object was given
     else if (requesting_object) {
       ROS_INFO("Great, thank you!");
       sc.voiceSound("Great, thank you!").play();
@@ -365,6 +419,7 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
       learnObject();
       requesting_object_name = true;
     }
+    //if in wait mode, recite and show the objects that the robot has learned
     else if (wait_mode){
       system("python /home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/recite_objects.py");
     }
@@ -408,10 +463,12 @@ int main(int argc, char** argv){
       requestInteraction();
     }
     else if (requesting_object){
-      //wait for object
+      //wait for object and follow user
+      spin_bot(swivel_dir, 0.1);
     }
     else if (requesting_interaction){
-      //wait for interaction
+      //wait for interaction and follow user
+      spin_bot(swivel_dir, 0.1);
     }
     //when requesting object name, prompt the user to input the object name
     else if (requesting_object_name){
