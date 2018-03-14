@@ -34,7 +34,10 @@
 #define IMAGE_HEIGHT 240
 #define IMAGE_WIDTH 640
 
-#define SWIVEL_TOLERANCE 0.1
+#define SWIVEL_TOLERANCE 0.05
+
+#define EXPLORE_MODE_REPROMPT 30
+#define INTERACTION_TIMEOUT 30
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 
@@ -47,6 +50,7 @@ bool requesting_object;
 bool requesting_object_name;
 
 int explore_mode_enter_time;
+int interaction_enter_time;
 bool obstacle_detected;
 
 int swivel_dir;
@@ -55,6 +59,7 @@ int swivel_dir;
 
 void initStates(){
   explore_mode_enter_time = 0;
+  interaction_enter_time = 0;
   wait_mode = true;
   explore_mode = false;
 
@@ -71,8 +76,11 @@ void enterExploreMode(){
   ros::NodeHandle n;
   ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
 
+  //assume by default there are obstacles in view until cloud_cb says otherwise
+  obstacle_detected = true;
+
   while (obstacle_detected){
-    ROS_INFO("SWIVELING TO ENTER EXPLORE MODE");
+    //ROS_INFO("SWIVELING TO ENTER EXPLORE MODE");
     geometry_msgs::Twist cmd;
     cmd.angular.z = SPIN_SPEED;
     cmdpub_.publish(cmd);
@@ -80,11 +88,26 @@ void enterExploreMode(){
     loop_rate.sleep();
   }
 
+  //ensure all other states are false
+  wait_mode = false;
+  found_user = false;
+  requesting_interaction = false;
+  requesting_object = false;
+  requesting_object_name = false;
+  
+
   ROS_INFO("Hello, would anyone like to interact with me?");
   sound_play::SoundClient sc;
   sc.voiceSound("Hello, would anyone like to interact with me?").play();
   explore_mode_enter_time = ros::Time::now().toSec();
   explore_mode = true;
+}
+
+/*
+Resets the time for beginning an interaction
+*/
+void resetInteractionTime(){
+  interaction_enter_time = ros::Time::now().toSec();
 }
 
 /*
@@ -101,9 +124,25 @@ void voiceCallback(const std_msgs::String& msg){
 }
 
 void requestInteraction(){
+  resetInteractionTime();
+  requesting_interaction = true;
+
   ROS_INFO("Hello there, would you like to help me? If so, push on my base");
   sound_play::SoundClient sc;
   sc.voiceSound("Hello there, would you like to help me? If so, push on my base").play();
+}
+
+void requestObject(){
+  resetInteractionTime();
+  requesting_object = true;
+
+  sound_play::SoundClient sc;
+  sc.voiceSound("Great! I'm trying to learn about different objects").play();
+  ROS_INFO("Great! I'm trying to learn about different objects.");
+  ROS_INFO("Please place anything on the ground in front of me so that I can see it");
+  sc.voiceSound("Please place anything on the ground in front of me so that I can see it").play();
+  ROS_INFO("Then push on my base to let me know I can start learning");
+  sc.voiceSound("Then push on my base to let me know I can start learning").play();
 }
 
 /*
@@ -115,8 +154,8 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   int numValid = 0;
   float z_thresh = 2.0;
 
-  //float x_thresh = 150;
-  float x_thresh = 15000;
+  float x_thresh = 250;
+  //float x_thresh = 15000;
   int person_thresh = 30000;
   //int wall_thresh = 45000;
   int wall_thresh = 450000;
@@ -149,42 +188,34 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   z /= numValid;
 
   if (numValid > person_thresh && numValid < wall_thresh){
-    ROS_INFO_THROTTLE(1, "Obstacle detected with %d points", numValid);
+    //ROS_INFO_THROTTLE(1, "Obstacle detected with %d points", numValid);
     obstacle_detected = true;
 
     //exit explore mode if a user is found
     if (explore_mode) {
       explore_mode = false;
       found_user = true;
-      ROS_INFO_THROTTLE(1, "FOUND USER at x: %f z: %f, with %d points", x, z, numValid);
+      //ROS_INFO_THROTTLE(1, "FOUND USER at x: %f z: %f, with %d points", x, z, numValid);
     }
     //if trying to interact with a person, give a direction to swivel to follow the person
     else if (requesting_interaction || requesting_object){
       //if within tolerance, do not swivel
       if (-SWIVEL_TOLERANCE < x && x < SWIVEL_TOLERANCE){
         swivel_dir = 0;
-        ROS_INFO_THROTTLE(1, "NOT SWIVELING BECAUSE  x: %f ", x);
+        //ROS_INFO_THROTTLE(1, "NOT SWIVELING BECAUSE  x: %f ", x);
       }
       else {
-        ROS_INFO_THROTTLE(1, "SWIVELING BECAUSE  x: %f ", x);
+        //ROS_INFO_THROTTLE(1, "SWIVELING BECAUSE  x: %f ", x);
         swivel_dir = -x / std::abs(x);
       }
     }
   }
   //no obstacle detected, no swiveling
   else{ 
-    ROS_INFO_THROTTLE(1, "No obstacle detected because %d points", numValid);
+    //ROS_INFO_THROTTLE(1, "No obstacle detected because %d points", numValid);
     obstacle_detected = false;
     swivel_dir = 0;
   }
-
-  //TODO: test this to make sure it is valid
-  //go back to explore mode if the person leaves
-  //else if (numValid < person_thresh && requesting_interaction){
-  //  requesting_interaction = false;
-  //  enterExploreMode();
-  //}
-
 }
 
 /*
@@ -199,8 +230,9 @@ void lookupObject(){
 
   int result = -1;
 
-  //loop until the user inputs a valid word - TODO: there should be exit criteria if user gives up
-  while (result != 0){
+  //loop until the user inputs a valid word or if external termination of requesting_object_name
+  //TODO: need a way to exit from object prompt 
+  while (result != 0 || !requesting_object_name){
     //prompt the user to input the object name
     std::string prompt = 
         std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/init_object_prompt.py");
@@ -218,6 +250,8 @@ void lookupObject(){
       sc.voiceSound("I could not find a definition for that. Can you give me a more basic description?").play();
     }
   }
+
+  //TODO: thank the person
 
 }
 
@@ -402,14 +436,8 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
   
     //if requesting interaction, bump sensor indicates someone is willing to interact
     if (requesting_interaction){
-      sc.voiceSound("Great! I'm trying to learn about different objects").play();
-      ROS_INFO("Great! I'm trying to learn about different objects.");
-      ROS_INFO("Please place anything on the ground in front of me so that I can see it");
-      sc.voiceSound("Please place anything on the ground in front of me so that I can see it").play();
-      ROS_INFO("Then push on my base to let me know I can start learning");
-      sc.voiceSound("Then push on my base to let me know I can start learning").play();
       requesting_interaction = false;
-      requesting_object = true;
+      requestObject();
     }
     //if requesting objects, bump sensor indicates an object was given
     else if (requesting_object) {
@@ -432,6 +460,7 @@ int main(int argc, char** argv){
 	ros::spinOnce();
 
   ros::Rate loop_rate(10);
+  ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
 
   //subscribe to the /recognizer/output topic
   ros::Subscriber voiceSubscriber = n.subscribe("/recognizer/output", 100, voiceCallback);
@@ -448,8 +477,8 @@ int main(int argc, char** argv){
   initStates();
 
   //TODO: temporary, delete
-  //explore_mode = true;
-  //wait_mode = false;
+  enterExploreMode();
+  wait_mode = false;
 
   //main execution loop
   while (1){
@@ -459,32 +488,41 @@ int main(int argc, char** argv){
     } 
     else if (found_user){
       found_user = false;
-      requesting_interaction = true;
       requestInteraction();
     }
     else if (requesting_object){
       //wait for object and follow user
-      spin_bot(swivel_dir, 0.1);
+      geometry_msgs::Twist cmd;
+      cmd.angular.z = swivel_dir * SPIN_SPEED;
+      cmdpub_.publish(cmd);
     }
     else if (requesting_interaction){
       //wait for interaction and follow user
-      spin_bot(swivel_dir, 0.1);
+      geometry_msgs::Twist cmd;
+      cmd.angular.z = swivel_dir * SPIN_SPEED;
+      cmdpub_.publish(cmd);
     }
     //when requesting object name, prompt the user to input the object name
     else if (requesting_object_name){
       lookupObject();
       requesting_object_name = false;
-      explore_mode = true;
+      enterExploreMode();
     }
+    //revocalize the explore mode message if robot has been in explore mode for too long
     else if (explore_mode){
       int now = ros::Time::now().toSec();
-    
-      if (now - explore_mode_enter_time > 30){
+      if (now - explore_mode_enter_time > EXPLORE_MODE_REPROMPT){
         enterExploreMode();
       }
     }
     
-    //learnObject();
+    //return to explore mode if an interaction times out
+    int now = ros::Time::now().toSec();
+    if ((requesting_object || requesting_interaction || requesting_object_name) &&
+        now - interaction_enter_time > INTERACTION_TIMEOUT){
+      initStates();
+      enterExploreMode();
+    }
 
     ros::spinOnce();
     loop_rate.sleep();
