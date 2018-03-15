@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import subprocess
 import sys 
 import os
+import time
 
 obj_dir = "/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/learned_objects/"
 
@@ -34,6 +35,9 @@ for obj in objects:
   description = fp.readlines()[0]
   fp.close()
   subprocess.call(["rosrun", "sound_play", "say.py",  description])
+
+  sleep_time = 0.25 * len(description.split(' '))
+  time.sleep(sleep_time)
 
   #close the image
   plt.close()

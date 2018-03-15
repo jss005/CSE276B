@@ -27,8 +27,10 @@
 //coordinates for points of interests
 #define X_LAB -1.9
 #define Y_LAB -0.04
-#define X_COMMON_AREA -8.5
-#define Y_COMMON_AREA 1.14
+//#define X_COMMON_AREA -8.5
+//#define Y_COMMON_AREA 1.14
+#define X_COMMON_AREA -31.6
+#define Y_COMMON_AREA -1.1
 
 #define SPIN_SPEED 0.6
 #define IMAGE_HEIGHT 240
@@ -55,6 +57,8 @@ bool obstacle_detected;
 
 int swivel_dir;
 
+/*GLOBALS*/
+
 /*FUNCTIONS*/
 
 void initStates(){
@@ -75,6 +79,7 @@ void enterExploreMode(){
   ros::Rate loop_rate(10);
   ros::NodeHandle n;
   ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
+  //sound_play::SoundClient sc; 
 
   //assume by default there are obstacles in view until cloud_cb says otherwise
   obstacle_detected = true;
@@ -97,8 +102,8 @@ void enterExploreMode(){
   
 
   ROS_INFO("Hello, would anyone like to interact with me?");
-  sound_play::SoundClient sc;
-  sc.voiceSound("Hello, would anyone like to interact with me?").play();
+  //sc.voiceSound("Hello, would anyone like to interact with me?").play();
+  system("rosrun sound_play say.py 'Hello, would anyone like to interact with me?'");
   explore_mode_enter_time = ros::Time::now().toSec();
   explore_mode = true;
 }
@@ -126,23 +131,29 @@ void voiceCallback(const std_msgs::String& msg){
 void requestInteraction(){
   resetInteractionTime();
   requesting_interaction = true;
+  //sound_play::SoundClient sc; 
 
   ROS_INFO("Hello there, would you like to help me? If so, push on my base");
-  sound_play::SoundClient sc;
-  sc.voiceSound("Hello there, would you like to help me? If so, push on my base").play();
+  //sc.voiceSound("Hello there, would you like to help me? If so, push on my base").play();
+  system("rosrun sound_play say.py 'Hello there, would you like to help me? If so, push on my base'");
 }
 
 void requestObject(){
   resetInteractionTime();
   requesting_object = true;
+  //sound_play::SoundClient sc; 
 
-  sound_play::SoundClient sc;
-  sc.voiceSound("Great! I'm trying to learn about different objects").play();
+  //sc.voiceSound("Great! I'm trying to learn about different objects").play();
+  system("rosrun sound_play say.py 'Great!'");
+  system("rosrun sound_play say.py ' I am trying to learn about different objects'");
   ROS_INFO("Great! I'm trying to learn about different objects.");
   ROS_INFO("Please place anything on the ground in front of me so that I can see it");
-  sc.voiceSound("Please place anything on the ground in front of me so that I can see it").play();
+  //sc.voiceSound("Please place anything on the ground in front of me so that I can see it").play();
+  system("rosrun sound_play say.py 'Please place anything on the ground'"); 
+  system("rosrun sound_play say.py 'I need to be able to see it on my screen'");
   ROS_INFO("Then push on my base to let me know I can start learning");
-  sc.voiceSound("Then push on my base to let me know I can start learning").play();
+  //sc.voiceSound("Then push on my base to let me know I can start learning").play();
+  system("rosrun sound_play say.py 'Then push on my base to let me know I can start learning'");
 }
 
 /*
@@ -224,19 +235,26 @@ and saves the result under learned_objects
 */
 void lookupObject(){
 
-  sound_play::SoundClient sc;
-  sc.voiceSound("Please type in the name of this object on my keyboard").play();
+  sound_play::SoundClient sc; 
+  //sc.voiceSound("Please type in the name of this object on my keyboard").play();
+  system("rosrun sound_play say.py 'Please type in the name of this object on my keyboard'");
   ROS_INFO("Please type in the name of this object on my keyboard");
 
   int result = -1;
 
   //loop until the user inputs a valid word or if external termination of requesting_object_name
   //TODO: need a way to exit from object prompt 
-  while (result != 0 || !requesting_object_name){
+  while (result != 0 && requesting_object_name){
     //prompt the user to input the object name
     std::string prompt = 
         std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/init_object_prompt.py");
     system(prompt.c_str());
+
+    //check if the interaction timed out
+    int now = ros::Time::now().toSec();
+    if (now - interaction_enter_time > INTERACTION_TIMEOUT){
+      break;
+    }
 
     //google the object
     std::string command = 
@@ -247,7 +265,8 @@ void lookupObject(){
     ROS_INFO_THROTTLE(1, "Result from googler: %d", result);
     
     if (result != 0){
-      sc.voiceSound("I could not find a definition for that. Can you give me a more basic description?").play();
+      //sc.voiceSound("I could not find a definition for that. Can you give me a more basic description?").play();
+      system("rosrun sound_play say.py 'I could not find a definition for that. Can you give me a more basic description?'");
     }
   }
 
@@ -298,6 +317,9 @@ take images of the object. If the object is placed on the ground then move the t
 pictures. If I put on a tray, then just take one
 */
 void learnObject(){
+
+  resetInteractionTime();
+
   ros::Rate wait(0.5);
 
   system("rosservice call /image_saver/save");
@@ -313,6 +335,7 @@ void learnObject(){
   system("rosservice call /image_saver/save");
 
   move_bot(-1, 2.0);
+  resetInteractionTime();
   wait.sleep();
   system("rosservice call /image_saver/save");
   spin_bot(-1, 0.5);
@@ -329,6 +352,7 @@ void learnObject(){
   wait.sleep();
   system("rosservice call /image_saver/save");
   
+  resetInteractionTime();
   
 }
 
@@ -388,7 +412,7 @@ Return commands can only be given while the robot is exploring.
 */
 void commandLineCallBack(){
 
-  sound_play::SoundClient sc;
+  //sound_play::SoundClient sc; 
 
   while (1){
 
@@ -412,7 +436,8 @@ void commandLineCallBack(){
       success = moveToGoal(X_LAB, Y_LAB);
       if (success){
         ROS_INFO("Press my bump sensor if you want to see what I learned");
-        sc.voiceSound("Press my bump sensor if you want to see what I learned").play();
+        //sc.voiceSound("Press my bump sensor if you want to see what I learned").play();
+        system("rosrun sound_play say.py 'Press my bump sensor if you want to see what I learned'");
       }
       else{
         wait_mode = false;
@@ -428,7 +453,8 @@ void commandLineCallBack(){
 }
 
 void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
-  sound_play::SoundClient sc;
+  sound_play::SoundClient sc; 
+
   // Check for pressed/not pressed
   if(bumperMessage.bumper == kobuki_msgs::BumperEvent::CENTER && 
      bumperMessage.state == kobuki_msgs::BumperEvent::PRESSED){
@@ -442,7 +468,8 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
     //if requesting objects, bump sensor indicates an object was given
     else if (requesting_object) {
       ROS_INFO("Great, thank you!");
-      sc.voiceSound("Great, thank you!").play();
+      //sc.voiceSound("Great, thank you!").play();
+      system("rosrun sound_play say.py 'Great, thank you!'");
       requesting_object = false;
       learnObject();
       requesting_object_name = true;
@@ -477,12 +504,22 @@ int main(int argc, char** argv){
   initStates();
 
   //TODO: temporary, delete
-  enterExploreMode();
-  wait_mode = false;
+  //enterExploreMode();
+  //wait_mode = false;
 
   //main execution loop
   while (1){
    
+    //return to explore mode if an interaction times out
+    int now = ros::Time::now().toSec();
+    if ((requesting_object || requesting_interaction || requesting_object_name) &&
+        now - interaction_enter_time > INTERACTION_TIMEOUT){
+      initStates();
+      enterExploreMode();
+    }
+
+    //take appropriate behavior based on states    
+
     if (wait_mode){
       //don't do anything
     } 
@@ -514,14 +551,6 @@ int main(int argc, char** argv){
       if (now - explore_mode_enter_time > EXPLORE_MODE_REPROMPT){
         enterExploreMode();
       }
-    }
-    
-    //return to explore mode if an interaction times out
-    int now = ros::Time::now().toSec();
-    if ((requesting_object || requesting_interaction || requesting_object_name) &&
-        now - interaction_enter_time > INTERACTION_TIMEOUT){
-      initStates();
-      enterExploreMode();
     }
 
     ros::spinOnce();
