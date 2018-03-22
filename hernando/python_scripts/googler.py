@@ -53,6 +53,7 @@ try:
 
   #write the sentence into the learned objects directory
   filename = "src/turtlebot_apps/hernando/learned_objects/" + words + "/description.txt"
+  filename = '_'.join(filename.lower().split())
   if not os.path.exists(os.path.dirname(filename)):
     os.makedirs(os.path.dirname(filename))
   fp = open(filename, 'w')
@@ -73,5 +74,6 @@ try:
 #error occurs when there is no webpage for the result
 #likely occurs when a non-basic description is given
 except:
+  print "Unexpected error:", sys.exc_info()[0]
   print "I couldn't find a definition for '%s'. Can you give me a more basic description?" % words
   sys.exit(-1)

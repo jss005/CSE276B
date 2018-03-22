@@ -50,6 +50,7 @@ bool found_user;
 bool requesting_interaction;
 bool requesting_object;
 bool requesting_object_name;
+bool offering_information;
 
 int explore_mode_enter_time;
 int interaction_enter_time;
@@ -79,13 +80,11 @@ void enterExploreMode(){
   ros::Rate loop_rate(10);
   ros::NodeHandle n;
   ros::Publisher cmdpub_ = n.advertise<geometry_msgs::Twist> ("/cmd_vel_mux/input/teleop", 1000);
-  //sound_play::SoundClient sc; 
 
   //assume by default there are obstacles in view until cloud_cb says otherwise
   obstacle_detected = true;
 
   while (obstacle_detected){
-    //ROS_INFO("SWIVELING TO ENTER EXPLORE MODE");
     geometry_msgs::Twist cmd;
     cmd.angular.z = SPIN_SPEED;
     cmdpub_.publish(cmd);
@@ -99,11 +98,11 @@ void enterExploreMode(){
   requesting_interaction = false;
   requesting_object = false;
   requesting_object_name = false;
+  offering_information = false;
   
 
-  ROS_INFO("Hello, would anyone like to interact with me?");
-  //sc.voiceSound("Hello, would anyone like to interact with me?").play();
-  system("rosrun sound_play say.py 'Hello, would anyone like to interact with me?'");
+  ROS_INFO("Greetings. I require someone to assist me.");
+  system("espeak -v m4 -s 120 'Greetings. I require someone to assist me.'");
   explore_mode_enter_time = ros::Time::now().toSec();
   explore_mode = true;
 }
@@ -131,29 +130,21 @@ void voiceCallback(const std_msgs::String& msg){
 void requestInteraction(){
   resetInteractionTime();
   requesting_interaction = true;
-  //sound_play::SoundClient sc; 
 
-  ROS_INFO("Hello there, would you like to help me? If so, push on my base");
-  //sc.voiceSound("Hello there, would you like to help me? If so, push on my base").play();
-  system("rosrun sound_play say.py 'Hello there, would you like to help me? If so, push on my base'");
+  ROS_INFO("Greetings, I require your assistance. To proceed, push on my base.");
+  system("espeak -v m4 -s 120 'Greetings, I require your assistance. To proceed, push on my base.'");
 }
 
 void requestObject(){
   resetInteractionTime();
   requesting_object = true;
-  //sound_play::SoundClient sc; 
 
-  //sc.voiceSound("Great! I'm trying to learn about different objects").play();
-  system("rosrun sound_play say.py 'Great!'");
-  system("rosrun sound_play say.py ' I am trying to learn about different objects'");
-  ROS_INFO("Great! I'm trying to learn about different objects.");
-  ROS_INFO("Please place anything on the ground in front of me so that I can see it");
-  //sc.voiceSound("Please place anything on the ground in front of me so that I can see it").play();
-  system("rosrun sound_play say.py 'Please place anything on the ground'"); 
-  system("rosrun sound_play say.py 'I need to be able to see it on my screen'");
-  ROS_INFO("Then push on my base to let me know I can start learning");
-  //sc.voiceSound("Then push on my base to let me know I can start learning").play();
-  system("rosrun sound_play say.py 'Then push on my base to let me know I can start learning'");
+  system("espeak -v m4 -s 120 'I am attempting to scan different objects'");
+  ROS_INFO("I am attempting to scan different objects.");
+  ROS_INFO("Please place any object on the ground in front of me so that I can see it on my screen"); 
+  system("espeak -v m4 -s 120 'Please place any object on the ground in front of me so that I can see it on my screen'"); 
+  ROS_INFO("Then push on my base to initiate the scan");
+  system("espeak -v m4 -s 120 'Then push on my base to initiate the scan'");
 }
 
 /*
@@ -235,15 +226,12 @@ and saves the result under learned_objects
 */
 void lookupObject(){
 
-  sound_play::SoundClient sc; 
-  //sc.voiceSound("Please type in the name of this object on my keyboard").play();
-  system("rosrun sound_play say.py 'Please type in the name of this object on my keyboard'");
+  system("espeak -v m4 -s 120 'Please type in the name of this object on my keyboard'");
   ROS_INFO("Please type in the name of this object on my keyboard");
 
   int result = -1;
 
   //loop until the user inputs a valid word or if external termination of requesting_object_name
-  //TODO: need a way to exit from object prompt 
   while (result != 0 && requesting_object_name){
     //prompt the user to input the object name
     std::string prompt = 
@@ -261,16 +249,47 @@ void lookupObject(){
         std::string("python ~/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/googler.py ")
       + std::string("~/turtlebot_ws/src/turtlebot_apps/hernando/temp/obj_name.txt");
   
+
     result = system(command.c_str());
     ROS_INFO_THROTTLE(1, "Result from googler: %d", result);
     
     if (result != 0){
-      //sc.voiceSound("I could not find a definition for that. Can you give me a more basic description?").play();
-      system("rosrun sound_play say.py 'I could not find a definition for that. Can you give me a more basic description?'");
+      system("espeak -v m4 -s 120 'I could not find a definition for that. I require a more basic description?'");
+    }
+    else {
+      //CODE FOR NORMAL OPERATION -- THANK AND OFFER
+      
+      
+      system("espeak -v m4 -s 120 'Thank you. You may press on my base to hear the results of the scan.'");
+      offering_information = true;
+      resetInteractionTime();
+      
+      
+    
+      //CODE FOR EXPERIMENT 1 -- THANK AND SHARE
+      /*
+      system("espeak -v m4 -s 120 'Scans completed.'");
+      system("python /home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/recite_objects.py single");
+      system("espeak -v m4 -s 120 'Do you have additional objects? Press my base once you have placed something in front of me'");
+      system("espeak -v m4 -s 120 'If you have no other objects, liv long and prosper.'");
+      requesting_object_name = false;
+      requesting_object = true;
+      resetInteractionTime();
+      */
+      
+      
+      //CODE FOR EXPERIMENT 2 -- THANK AND NO SHARE
+      /*
+      system("espeak -v m4 -s 120 'Thank you'");
+      system("espeak -v m4 -s 120 'Do you have additional objects? Press my base once you have put something in front of me'");
+      system("espeak -v m4 -s 120 'If you have no other objects, liv long and prosper.'");
+      requesting_object_name = false;
+      requesting_object = true;
+      resetInteractionTime();
+      */
     }
   }
 
-  //TODO: thank the person
 
 }
 
@@ -424,6 +443,7 @@ void commandLineCallBack(){
 
     //Navigate to the correct point of interest when input is given
     if (std::string(input).compare("explore") == 0 && wait_mode){
+      system("espeak -v m4 -s 120 'One to beam down'");
       success = moveToGoal(X_COMMON_AREA, Y_COMMON_AREA);
       if (success){
         wait_mode = false;
@@ -433,11 +453,12 @@ void commandLineCallBack(){
     else if (std::string(input).compare("return") == 0 && explore_mode){
       explore_mode = false;
       wait_mode = true;
+      system("espeak -v m4 -s 120 'One to beam up'");
       success = moveToGoal(X_LAB, Y_LAB);
       if (success){
-        ROS_INFO("Press my bump sensor if you want to see what I learned");
+        ROS_INFO("Press my bump sensor to listen to my report.");
         //sc.voiceSound("Press my bump sensor if you want to see what I learned").play();
-        system("rosrun sound_play say.py 'Press my bump sensor if you want to see what I learned'");
+        system("espeak -v m4 -s 120 'Press my bump sensor to listen to my report'");
       }
       else{
         wait_mode = false;
@@ -467,9 +488,8 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
     }
     //if requesting objects, bump sensor indicates an object was given
     else if (requesting_object) {
-      ROS_INFO("Great, thank you!");
-      //sc.voiceSound("Great, thank you!").play();
-      system("rosrun sound_play say.py 'Great, thank you!'");
+      ROS_INFO("Initiating scans");
+      system("espeak -v m4 -s 120 'Initiating scans'");
       requesting_object = false;
       learnObject();
       requesting_object_name = true;
@@ -477,6 +497,10 @@ void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
     //if in wait mode, recite and show the objects that the robot has learned
     else if (wait_mode){
       system("python /home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/recite_objects.py");
+    }
+    //if offering information, recite the definition of the last object learned
+    else if (offering_information){
+      system("python /home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/python_scripts/recite_objects.py single");
     }
   }
 }
@@ -512,7 +536,7 @@ int main(int argc, char** argv){
    
     //return to explore mode if an interaction times out
     int now = ros::Time::now().toSec();
-    if ((requesting_object || requesting_interaction || requesting_object_name) &&
+    if ((requesting_object || requesting_interaction || requesting_object_name || offering_information) &&
         now - interaction_enter_time > INTERACTION_TIMEOUT){
       initStates();
       enterExploreMode();
@@ -543,13 +567,21 @@ int main(int argc, char** argv){
     else if (requesting_object_name){
       lookupObject();
       requesting_object_name = false;
-      enterExploreMode();
+      //enterExploreMode();
+    }
+    else if (offering_information){
+      //wait for prompt and follow user
+      geometry_msgs::Twist cmd;
+      cmd.angular.z = swivel_dir * SPIN_SPEED;
+      cmdpub_.publish(cmd);
+    
     }
     //revocalize the explore mode message if robot has been in explore mode for too long
     else if (explore_mode){
       int now = ros::Time::now().toSec();
       if (now - explore_mode_enter_time > EXPLORE_MODE_REPROMPT){
         enterExploreMode();
+        system("espeak -v m4 -s 120 'Logic dictates that helping me will make me go away.'");
       }
     }
 
