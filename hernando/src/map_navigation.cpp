@@ -1,5 +1,24 @@
 /*
- *TODO: header
+File: hernando.cpp
+Author: Jeremy Smith
+Date: 3/22/2018
+
+This program defines SpockBot, an exploratory robot that asks people for objects to learn and
+reports back about them.
+
+Usage:
+roscore
+roslaunch turtlebot_bringup minimal.launch
+roslaunch astra_launch astra_pro_amcl.launch
+roslaunch turtlebot_navigation amcl_demo.launch map_file:=/home/turtlebot/turtlebot_ws/src/turtlebot_apps/hernando/maps/third.yaml
+roslaunch turtlebot_rviz_launchers view_navigation.launch
+<localize robot to starting location then exit> 
+rosrun image_view image_view image:=/camera/rgb/image_raw theora
+
+<navigation to hernando/temp>
+rosrun image_view image_saver image:=/camera/rgb/image_raw _save_all_image:=false _filename_format:=frame%04i.jpg __name:=image_saver
+
+rosrun hernando hernando
  */
 
 /*INCLUDES*/
@@ -127,6 +146,9 @@ void voiceCallback(const std_msgs::String& msg){
 
 }
 
+/*
+Makes the robot request an interaction with a human that has been noticed
+*/
 void requestInteraction(){
   resetInteractionTime();
   requesting_interaction = true;
@@ -135,6 +157,9 @@ void requestInteraction(){
   system("espeak -v m4 -s 120 'Greetings, I require your assistance. To proceed, push on my base.'");
 }
 
+/*
+Makes the robot request an object from a human that has agreed to interact
+*/
 void requestObject(){
   resetInteractionTime();
   requesting_object = true;
@@ -149,6 +174,8 @@ void requestObject(){
 
 /*
 Callback function for point clouds.  
+
+Sets the swivel direction that the robot should move in if a person is detected.
 
 cloud: the PointCloud message used to detect obstacles
 */
@@ -166,7 +193,7 @@ void cloud_cb (const PointCloud::ConstPtr& cloud) {
   float x = 0.0;
   float z = 0.0;
 
-  //find potential obstacles
+  //find potential people
   for (int k = 0; k < IMAGE_HEIGHT; k++){
     for (int i = 0; i < IMAGE_WIDTH; i++){
       const pcl::PointXYZ &pt = cloud->points[640*(180+k)+(i)];
@@ -258,8 +285,6 @@ void lookupObject(){
     }
     else {
       //CODE FOR NORMAL OPERATION -- THANK AND OFFER
-      
-      
       system("espeak -v m4 -s 120 'Thank you. You may press on my base to hear the results of the scan.'");
       offering_information = true;
       resetInteractionTime();
@@ -380,6 +405,7 @@ Attempts to move the robot to a location on the saved map specified by
 xGoal and yGoal
 
 Code is from gaitech_edu tutorial
+http://edu.gaitech.hk/turtlebot/map-navigation.html
 */
 bool moveToGoal(double xGoal, double yGoal){
 
@@ -473,6 +499,11 @@ void commandLineCallBack(){
 
 }
 
+/*
+Callback for the bump sensor.
+Messages indicate that a user is interacting with the robot and an appropriate action
+should be taken
+*/
 void bumperCallback(const kobuki_msgs::BumperEvent& bumperMessage){
   sound_play::SoundClient sc; 
 
@@ -527,7 +558,7 @@ int main(int argc, char** argv){
 
   initStates();
 
-  //TODO: temporary, delete
+  //uncomment to begin in explore mode
   //enterExploreMode();
   //wait_mode = false;
 
